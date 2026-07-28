@@ -1,0 +1,371 @@
+---
+title: "COVID modeling with dgtf"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{COVID modeling with dgtf}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+dgtf_run_long <- identical(Sys.getenv("DGTF_RUN_EXPENSIVE_VIGNETTES"), "true")
+```
+
+```{r libraries}
+library(dgtf)
+library(ggplot2)
+```
+
+This vignette walks through the full **dgtf** workflow on a real surveillance dataset, daily COVID-19 case counts from Santa Cruz County, California, in 2020. It mirrors the code order of Section 6 of the package paper so that, run top to bottom, it reproduces the manuscript results. We construct three structurally different DGTF families (discretized Hawkes, distributed lag, autoregression), fit them, run an EpiEstim renewal equation baseline, and compare them in and out of sample. The discretized Hawkes model is additionally refit with MCMC for reference uncertainty. The sister vignette `getting-started.Rmd` walks through the same workflow on simulated data where the truth is known.
+
+The ordering matters for reproducibility: the model initial values and the fits are drawn from shared `set.seed(123)` streams, exactly as in the manuscript, so moving a random-number-consuming call changes every result that follows it.
+
+# 1. Load Data
+
+The package ships the Santa Cruz County series as `covid_scz_2020`, a daily case count covering 2020. We split into a 250-day training window and a 14-day test window for the forecast scoring below.
+
+```{r, eval = FALSE}
+ytrain <- covid_scz_2020[1:250]
+ytest <- covid_scz_2020[251:264]
+ggplot(data = data.frame(x = 1:264, y = c(ytrain, ytest)), aes(x = x, y = y)) +
+  geom_line() +
+  geom_vline(xintercept = 250, linetype = "dashed") +
+  theme_minimal()
+```
+
+The plot shows the raw counts. Two features dominate: a strong weekly oscillation from the weekday reporting effect, and a secular peak in late 2020. The models below need to capture both.
+
+# 2. Model configurations
+
+We fit three of the canonical models from the paper: a discretized Hawkes (DH, the M0 model of Section 5), a distributed lag (DL), and a negative binomial autoregression (AR). Following the manuscript, all three models are constructed under a single `set.seed(123)` so the random initial values are drawn from one reproducible stream, in the order DH then DL then AR.
+
+The `mod_DH` object specifies both the structure (negative binomial observation, softplus gain, lognormal lag, weekly seasonality, Gaussian system noise) and the starting points for the inference. The random draws inside `lag_lognormal()`, `err_gaussian()`, and `seas_period()` are the random initial values. The DL model uses a negative binomial lag with $r = 2$ and a weekly seasonal intercept. The AR model is an order-3 negative binomial autoregression with time-varying coefficients; AR models do not admit a reproduction number interpretation, because their lag coefficients enter the conditional mean as a regression on lagged counts rather than as a branching ratio.
+
+```{r, eval = FALSE}
+set.seed(123)
+mod_DH <- dgtf_model(
+  obs = obs_nbinom(),
+  link = link_identity(),
+  sys = sys_shift(),
+  gain = gain_softplus(),
+  lag = lag_lognormal(
+    meanlog = rnorm(1, 1, 1),
+    sigma2 = 1 / rgamma(1, 10, 1)
+  ),
+  err = err_gaussian(W = 1 / rgamma(1, 10, 1)),
+  seasonality = seas_period(7, init = runif(7, 0, 10))
+)
+
+mod_DL <- dgtf_distributed_lag(
+  r = 2,
+  kappa = runif(1, 0.1, 0.9),
+  seasonality = seas_weekly(init = runif(7, 0, 10))
+)
+
+mod_AR <- dgtf_nb_ar(
+  p = 3,
+  W = 1 / rgamma(1, 10, 1),
+  seasonality = seas_weekly(init = runif(7, 0, 10))
+)
+```
+
+The three models share the same priors on the components they have in common, namely mildly informative priors on the seasonality, the innovation variance `W`, and the overdispersion `rho`. They differ only in the prior on the lag distribution. The DH model places a normal prior on the log-scale mean and an inverse-gamma prior on the log-scale variance of its lognormal lag. The DL model replaces this with a `Beta(1, 1)` prior on the geometric decay parameter, supplied through the single `lag` slot `par1`. The AR model omits the `lag` entry entirely, because its lag parameters are structural (the order `p`) rather than continuous.
+
+```{r, eval = FALSE}
+prior_DH <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1),
+  lag         = list(par1 = normal(0, 1), par2 = inv_gamma(1, 1))
+)
+
+prior_DL <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1),
+  lag         = list(par1 = dist_beta(1, 1))
+)
+
+prior_AR <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1)
+)
+```
+
+# 3. Posterior inference
+
+```{r expensive-vignette-gate, include = FALSE}
+knitr::opts_chunk$set(eval = dgtf_run_long, purl = dgtf_run_long)
+```
+
+The remaining chunks run the manuscript-scale COVID analysis and are not
+evaluated or tangled during package checks by default. To execute them while
+rebuilding the vignette, set `DGTF_RUN_EXPENSIVE_VIGNETTES=true` in the R
+environment.
+
+The fits are run under a single `set.seed(123)` in the manuscript order: the discretized Hawkes model with HVA, then the same DH model with MCMC, then the DL and AR models with HVA. The `set.seed(123)` in the first chunk persists across the chunks below (knitr shares one R session), so the four fits draw from one continuous stream just as in the manuscript.
+
+The MCMC chunk is gated with `eval = FALSE` because the fit takes around 50 minutes on this dataset. Note that, because it is skipped during the build, the `fit_DL` and `fit_AR` results obtained here draw from the post-`fit_DH` RNG state rather than the post-MCMC state used in the manuscript; flip the MCMC chunk to `eval = TRUE` to reproduce the manuscript's `fit_DL`/`fit_AR` exactly.
+
+```{r, eval = FALSE}
+set.seed(123)
+fit_DH <- dgtf(ytrain, mod_DH, prior_DH,
+  method = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+summary(fit_DH)
+plot(fit_DH, what = "marglik") # Check convergence
+```
+
+`summary(fit_DH)` reports the inferred parameters, the median band of the latent state $\psi_t$, and the HVA convergence diagnostic computed from the SMC log marginal likelihood trace. The seven `seas[1]` through `seas[7]` entries show the day-of-week effect, with a pronounced Monday peak and a Saturday-Sunday trough, characteristic of weekly reporting patterns. The `"marglik"` plot checks convergence of the variational optimization.
+
+```{r mcmc-fit, eval = FALSE}
+fit_DH_mcmc <- dgtf(ytrain, mod_DH, prior_DH,
+  method = "mcmc",
+  control = mcmc_control(iter = 10000, warmup = 5000, thin = 1)
+) # takes ~50 minutes
+summary(fit_DH_mcmc)
+```
+
+```{r, eval = FALSE}
+fit_DL <- dgtf(ytrain, mod_DL, prior_DL,
+  method = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+print(summary(fit_DL))
+
+fit_AR <- dgtf(ytrain, mod_AR, prior_AR,
+  method = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+print(summary(fit_AR))
+```
+
+
+# 4. Posterior predictive checks and HVA-versus-MCMC comparison
+
+This section mirrors the calibration check in Section 6.3 of the paper. We compare the two engines on the discretized Hawkes model, caching its posterior predictive draws and building its forecast under a single `set.seed(123)` so the random-number stream matches the manuscript, and then cache the DL and AR posterior predictive draws at the end, just before the in-sample comparison in Section 5. Every chunk that needs the MCMC fit is gated with `eval = FALSE`, so with MCMC off only the HVA half of each step runs.
+
+The static parameters of the two engines are compared with `dgtf_compare_params()`, which without a `truth` argument returns the posterior mean, median, standard deviation, and 95% credible interval for each parameter under each method.
+
+```{r hva-mcmc-params, eval = FALSE}
+dgtf_compare_params(list(HVA = fit_DH, MCMC = fit_DH_mcmc))
+```
+
+The seasonal and $R_t$ posteriors are overlaid with `dgtf_compare_plot()`.
+
+```{r hva-mcmc-overlays, eval = FALSE}
+dgtf_compare_plot(
+  list(HVA = fit_DH, MCMC = fit_DH_mcmc),
+  what = "seas"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit_DH, MCMC = fit_DH_mcmc),
+  what = "Rt"
+)
+```
+
+The table combining the in-sample posterior predictive scores with the 14-day forecast scores is produced by the block below, under one `set.seed(123)`: cache the discretized Hawkes draws, score the fitted objects with `dgtf_compare()`, then build the forecasts and score them. The MCMC pieces are gated, so the evaluated stream is `set.seed(123)` → PPC → forecast.
+
+```{r, eval = FALSE}
+set.seed(123)
+attr(fit_DH, "ppc") <- posterior_predict(fit_DH)
+```
+
+```{r mcmc-ppc, eval = FALSE}
+attr(fit_DH_mcmc, "ppc") <- posterior_predict(fit_DH_mcmc)
+```
+
+```{r hva-mcmc-compare, eval = FALSE}
+dgtf_compare(list(HVA = fit_DH, MCMC = fit_DH_mcmc))
+```
+
+Note: `log_marglik` is the HVA SMC tail estimate of
+log p(y | gamma_final); MCMC fits have no equivalent stored
+and show NA. Pointwise log-likelihood is not currently
+exposed by either inference method.
+
+```{r, eval = FALSE}
+fc_DH <- dgtf_forecast_fit(fit_DH, h = 14, ypred_true = ytest)
+```
+
+```{r hva-mcmc-fc-compare, eval = FALSE}
+fc_DH_mcmc <- dgtf_forecast_fit(fit_DH_mcmc, h = 14, ypred_true = ytest)
+summary(fc_DH_mcmc)
+plot_dgtf_y(fit_DH_mcmc, fc_DH_mcmc)
+dgtf_compare(list(HVA = fc_DH, MCMC = fc_DH_mcmc))
+```
+
+The discretized Hawkes in-sample predictive band is shown below; the MCMC counterpart is gated off.
+
+```{r, eval = FALSE}
+plot(fit_DH, what = "yhat")
+summary(attr(fit_DH, "ppc"))
+```
+
+```{r mcmc-yhat, eval = FALSE}
+plot(fit_DH_mcmc, what = "yhat")
+summary(attr(fit_DH_mcmc, "ppc"))
+```
+
+The distributed lag and AR posterior predictive draws are cached the same way, just before the in-sample comparison.
+
+```{r, eval = FALSE}
+set.seed(123)
+attr(fit_DL, "ppc") <- posterior_predict(fit_DL, nrep = 100)
+attr(fit_AR, "ppc") <- posterior_predict(fit_AR, nrep = 100)
+
+plot(fit_DL, what = "yhat")
+summary(attr(fit_DL, "ppc"))
+
+plot(fit_AR, what = "yhat")
+summary(attr(fit_AR, "ppc"))
+```
+
+# 5. In-sample comparison
+
+`dgtf_compare()` reuses the cached posterior predictive objects and reports the in-sample predictive scores across the three models.
+
+```{r, eval = FALSE}
+dgtf_compare(
+  list(
+    DH = fit_DH,
+    DL = fit_DL,
+    AR = fit_AR
+  )
+)
+```
+
+## EpiEstim baseline
+
+The `epiestim_baseline()` wrapper runs `EpiEstim::estimate_R()` with a sliding window and returns the $R_t$ posterior bands in a format that `dgtf_compare_plot()` consumes. The EpiEstim renewal equation estimator does not accommodate weekly seasonality, so for a fair comparison against the DGTF fits we first apply a multiplicative deseasoning to the training counts. The `deseason_counts()` helper computes daily seasonal scales from the empirical standard deviations and divides the original series. Section 6.4 of the paper discusses why this protocol is needed.
+
+```{r, eval = FALSE}
+deseason_counts <- function(y, period = 7L, start_day = 1L) {
+  n <- length(y)
+  day_idx <- ((start_day - 1L + seq_len(n) - 1L) %% period) + 1L
+  sds <- vapply(seq_len(period), function(d) {
+    sd(y[day_idx == d], na.rm = TRUE)
+  }, numeric(1))
+  sds <- sds / sum(sds) * period
+  round(y / sds[day_idx])
+}
+
+y_adj <- deseason_counts(ytrain, period = 7L)
+
+epi <- epiestim_baseline(
+  y       = y_adj,
+  mean_si = 4.7,
+  sd_si   = 2.9,
+  method  = "parametric_si",
+  window  = 7
+)
+epi
+```
+
+We overlay the fits. For $R_t$ the AR fit is replaced by EpiEstim, because the AR model does not admit a reproduction number interpretation; for counts (`what = "yhat"`) and the seasonal estimates (`what = "seas"`) all three DGTF fits appear.
+
+```{r, eval = FALSE}
+dgtf_compare_plot(
+  list(
+    DH = fit_DH,
+    DL = fit_DL,
+    EpiEstim = epi
+  ),
+  what = "Rt"
+)
+
+dgtf_compare_plot(
+  list(
+    DH = fit_DH,
+    DL = fit_DL,
+    AR = fit_AR
+  ),
+  what = "yhat"
+)
+
+dgtf_compare_plot(
+  list(
+    DH = fit_DH,
+    DL = fit_DL,
+    AR = fit_AR
+  ),
+  what = "seas"
+)
+```
+
+`plot_dgtf_lag()` produces a grouped bar chart of the discretized lag distributions for the two Hawkes-style fits. The AR fit is excluded because its lag weights are time-varying coefficients rather than a probability distribution.
+
+```{r, eval = FALSE}
+plot_dgtf_lag(list(
+  DH = fit_DH,
+  DL = fit_DL
+), xlim = 14)
+```
+
+# 6. Out-of-sample forecasting
+
+Each fit is taken forward 14 days against the held-out test window. The discretized Hawkes forecast `fc_DH` was already built in Section 4; here we add the distributed lag and AR forecasts. The forecast objects share the same comparison and plotting interface as the fit objects.
+
+```{r, eval = FALSE}
+fc_DL <- dgtf_forecast_fit(fit_DL, h = 14, ypred_true = ytest)
+fc_AR <- dgtf_forecast_fit(fit_AR, h = 14, ypred_true = ytest)
+```
+
+```{r, eval = FALSE}
+dgtf_compare(
+  list(
+    DH = fc_DH,
+    DL = fc_DL,
+    AR = fc_AR
+  )
+)
+```
+
+`plot_dgtf_y()` overlays the in-sample posterior predictive band with the out-of-sample forecast band on a single time axis for one model, and `plot_dgtf_y_compare()` puts all three on one panel, one colour per method.
+
+```{r, eval = FALSE}
+fc_DH
+summary(fc_DH)
+plot_dgtf_y(fit_DH, fc_DH)
+```
+
+```{r, eval = FALSE}
+fc_DL
+summary(fc_DL)
+plot_dgtf_y(fit_DL, fc_DL)
+```
+
+```{r, eval = FALSE}
+fc_AR
+summary(fc_AR)
+plot_dgtf_y(fit_AR, fc_AR)
+```
+
+```{r, eval = FALSE}
+dgtf_compare_plot(list(
+  DH = fc_DH,
+  DL = fc_DL,
+  AR = fc_AR
+), what = "yhat")
+
+fits_list <- list(
+  DH = fit_DH,
+  DL = fit_DL,
+  AR = fit_AR
+)
+
+fcs_list <- list(
+  DH = fc_DH,
+  DL = fc_DL,
+  AR = fc_AR
+)
+
+plot_dgtf_y_compare(fits_list, fcs_list)
+```

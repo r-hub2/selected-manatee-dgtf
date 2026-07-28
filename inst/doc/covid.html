@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>COVID modeling with dgtf</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">COVID modeling with dgtf</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(dgtf)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="co">#&gt; Warning: package &#39;ggplot2&#39; was built under R version 4.5.2</span></span></code></pre></div>
+<p>This vignette walks through the full <strong>dgtf</strong> workflow
+on a real surveillance dataset, daily COVID-19 case counts from Santa
+Cruz County, California, in 2020. It mirrors the code order of Section 6
+of the package paper so that, run top to bottom, it reproduces the
+manuscript results. We construct three structurally different DGTF
+families (discretized Hawkes, distributed lag, autoregression), fit
+them, run an EpiEstim renewal equation baseline, and compare them in and
+out of sample. The discretized Hawkes model is additionally refit with
+MCMC for reference uncertainty. The sister vignette
+<code>getting-started.Rmd</code> walks through the same workflow on
+simulated data where the truth is known.</p>
+<p>The ordering matters for reproducibility: the model initial values
+and the fits are drawn from shared <code>set.seed(123)</code> streams,
+exactly as in the manuscript, so moving a random-number-consuming call
+changes every result that follows it.</p>
+<div id="load-data" class="section level1">
+<h1>1. Load Data</h1>
+<p>The package ships the Santa Cruz County series as
+<code>covid_scz_2020</code>, a daily case count covering 2020. We split
+into a 250-day training window and a 14-day test window for the forecast
+scoring below.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>ytrain <span class="ot">&lt;-</span> covid_scz_2020[<span class="dv">1</span><span class="sc">:</span><span class="dv">250</span>]</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>ytest <span class="ot">&lt;-</span> covid_scz_2020[<span class="dv">251</span><span class="sc">:</span><span class="dv">264</span>]</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">ggplot</span>(<span class="at">data =</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">264</span>, <span class="at">y =</span> <span class="fu">c</span>(ytrain, ytest)), <span class="fu">aes</span>(<span class="at">x =</span> x, <span class="at">y =</span> y)) <span class="sc">+</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="dv">250</span>, <span class="at">linetype =</span> <span class="st">&quot;dashed&quot;</span>) <span class="sc">+</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code></pre></div>
+<p>The plot shows the raw counts. Two features dominate: a strong weekly
+oscillation from the weekday reporting effect, and a secular peak in
+late 2020. The models below need to capture both.</p>
+</div>
+<div id="model-configurations" class="section level1">
+<h1>2. Model configurations</h1>
+<p>We fit three of the canonical models from the paper: a discretized
+Hawkes (DH, the M0 model of Section 5), a distributed lag (DL), and a
+negative binomial autoregression (AR). Following the manuscript, all
+three models are constructed under a single <code>set.seed(123)</code>
+so the random initial values are drawn from one reproducible stream, in
+the order DH then DL then AR.</p>
+<p>The <code>mod_DH</code> object specifies both the structure (negative
+binomial observation, softplus gain, lognormal lag, weekly seasonality,
+Gaussian system noise) and the starting points for the inference. The
+random draws inside <code>lag_lognormal()</code>,
+<code>err_gaussian()</code>, and <code>seas_period()</code> are the
+random initial values. The DL model uses a negative binomial lag with
+<span class="math inline">\(r = 2\)</span> and a weekly seasonal
+intercept. The AR model is an order-3 negative binomial autoregression
+with time-varying coefficients; AR models do not admit a reproduction
+number interpretation, because their lag coefficients enter the
+conditional mean as a regression on lagged counts rather than as a
+branching ratio.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>mod_DH <span class="ot">&lt;-</span> <span class="fu">dgtf_model</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">obs =</span> <span class="fu">obs_nbinom</span>(),</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">link =</span> <span class="fu">link_identity</span>(),</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">sys =</span> <span class="fu">sys_shift</span>(),</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="at">gain =</span> <span class="fu">gain_softplus</span>(),</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="at">lag =</span> <span class="fu">lag_lognormal</span>(</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>    <span class="at">meanlog =</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>    <span class="at">sigma2 =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, <span class="dv">10</span>, <span class="dv">1</span>)</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  ),</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  <span class="at">err =</span> <span class="fu">err_gaussian</span>(<span class="at">W =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, <span class="dv">10</span>, <span class="dv">1</span>)),</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">seas_period</span>(<span class="dv">7</span>, <span class="at">init =</span> <span class="fu">runif</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="dv">10</span>))</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>)</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>mod_DL <span class="ot">&lt;-</span> <span class="fu">dgtf_distributed_lag</span>(</span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>  <span class="at">r =</span> <span class="dv">2</span>,</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>  <span class="at">kappa =</span> <span class="fu">runif</span>(<span class="dv">1</span>, <span class="fl">0.1</span>, <span class="fl">0.9</span>),</span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">seas_weekly</span>(<span class="at">init =</span> <span class="fu">runif</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="dv">10</span>))</span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>)</span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>mod_AR <span class="ot">&lt;-</span> <span class="fu">dgtf_nb_ar</span>(</span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>  <span class="at">p =</span> <span class="dv">3</span>,</span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>  <span class="at">W =</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, <span class="dv">10</span>, <span class="dv">1</span>),</span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">seas_weekly</span>(<span class="at">init =</span> <span class="fu">runif</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="dv">10</span>))</span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a>)</span></code></pre></div>
+<p>The three models share the same priors on the components they have in
+common, namely mildly informative priors on the seasonality, the
+innovation variance <code>W</code>, and the overdispersion
+<code>rho</code>. They differ only in the prior on the lag distribution.
+The DH model places a normal prior on the log-scale mean and an
+inverse-gamma prior on the log-scale variance of its lognormal lag. The
+DL model replaces this with a <code>Beta(1, 1)</code> prior on the
+geometric decay parameter, supplied through the single <code>lag</code>
+slot <code>par1</code>. The AR model omits the <code>lag</code> entry
+entirely, because its lag parameters are structural (the order
+<code>p</code>) rather than continuous.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>prior_DH <span class="ot">&lt;-</span> <span class="fu">dgtf_prior</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">10</span>),</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">W           =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">rho         =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">lag         =</span> <span class="fu">list</span>(<span class="at">par1 =</span> <span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">par2 =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>))</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>)</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>prior_DL <span class="ot">&lt;-</span> <span class="fu">dgtf_prior</span>(</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">10</span>),</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>  <span class="at">W           =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>  <span class="at">rho         =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>  <span class="at">lag         =</span> <span class="fu">list</span>(<span class="at">par1 =</span> <span class="fu">dist_beta</span>(<span class="dv">1</span>, <span class="dv">1</span>))</span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>)</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>prior_AR <span class="ot">&lt;-</span> <span class="fu">dgtf_prior</span>(</span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>  <span class="at">seasonality =</span> <span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">10</span>),</span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>  <span class="at">W           =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>  <span class="at">rho         =</span> <span class="fu">inv_gamma</span>(<span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+<div id="posterior-inference" class="section level1">
+<h1>3. Posterior inference</h1>
+<p>The remaining chunks run the manuscript-scale COVID analysis and are
+not evaluated or tangled during package checks by default. To execute
+them while rebuilding the vignette, set
+<code>DGTF_RUN_EXPENSIVE_VIGNETTES=true</code> in the R environment.</p>
+<p>The fits are run under a single <code>set.seed(123)</code> in the
+manuscript order: the discretized Hawkes model with HVA, then the same
+DH model with MCMC, then the DL and AR models with HVA. The
+<code>set.seed(123)</code> in the first chunk persists across the chunks
+below (knitr shares one R session), so the four fits draw from one
+continuous stream just as in the manuscript.</p>
+<p>The MCMC chunk is gated with <code>eval = FALSE</code> because the
+fit takes around 50 minutes on this dataset. Note that, because it is
+skipped during the build, the <code>fit_DL</code> and
+<code>fit_AR</code> results obtained here draw from the
+post-<code>fit_DH</code> RNG state rather than the post-MCMC state used
+in the manuscript; flip the MCMC chunk to <code>eval = TRUE</code> to
+reproduce the manuscript’s <code>fit_DL</code>/<code>fit_AR</code>
+exactly.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>fit_DH <span class="ot">&lt;-</span> <span class="fu">dgtf</span>(ytrain, mod_DH, prior_DH,</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;hva&quot;</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">control =</span> <span class="fu">vb_control</span>(<span class="at">iter =</span> <span class="dv">1000</span>, <span class="at">n_sample =</span> <span class="dv">5000</span>, <span class="at">n_particle =</span> <span class="dv">500</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>)</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="fu">summary</span>(fit_DH)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="fu">plot</span>(fit_DH, <span class="at">what =</span> <span class="st">&quot;marglik&quot;</span>) <span class="co"># Check convergence</span></span></code></pre></div>
+<p><code>summary(fit_DH)</code> reports the inferred parameters, the
+median band of the latent state <span class="math inline">\(\psi_t\)</span>, and the HVA convergence
+diagnostic computed from the SMC log marginal likelihood trace. The
+seven <code>seas[1]</code> through <code>seas[7]</code> entries show the
+day-of-week effect, with a pronounced Monday peak and a Saturday-Sunday
+trough, characteristic of weekly reporting patterns. The
+<code>&quot;marglik&quot;</code> plot checks convergence of the variational
+optimization.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>fit_DH_mcmc <span class="ot">&lt;-</span> <span class="fu">dgtf</span>(ytrain, mod_DH, prior_DH,</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;mcmc&quot;</span>,</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="at">control =</span> <span class="fu">mcmc_control</span>(<span class="at">iter =</span> <span class="dv">10000</span>, <span class="at">warmup =</span> <span class="dv">5000</span>, <span class="at">thin =</span> <span class="dv">1</span>)</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>) <span class="co"># takes ~50 minutes</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="fu">summary</span>(fit_DH_mcmc)</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>fit_DL <span class="ot">&lt;-</span> <span class="fu">dgtf</span>(ytrain, mod_DL, prior_DL,</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;hva&quot;</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">control =</span> <span class="fu">vb_control</span>(<span class="at">iter =</span> <span class="dv">1000</span>, <span class="at">n_sample =</span> <span class="dv">5000</span>, <span class="at">n_particle =</span> <span class="dv">500</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>)</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">summary</span>(fit_DL))</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>fit_AR <span class="ot">&lt;-</span> <span class="fu">dgtf</span>(ytrain, mod_AR, prior_AR,</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>  <span class="at">method =</span> <span class="st">&quot;hva&quot;</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="at">control =</span> <span class="fu">vb_control</span>(<span class="at">iter =</span> <span class="dv">1000</span>, <span class="at">n_sample =</span> <span class="dv">5000</span>, <span class="at">n_particle =</span> <span class="dv">500</span>)</span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>)</span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">summary</span>(fit_AR))</span></code></pre></div>
+</div>
+<div id="posterior-predictive-checks-and-hva-versus-mcmc-comparison" class="section level1">
+<h1>4. Posterior predictive checks and HVA-versus-MCMC comparison</h1>
+<p>This section mirrors the calibration check in Section 6.3 of the
+paper. We compare the two engines on the discretized Hawkes model,
+caching its posterior predictive draws and building its forecast under a
+single <code>set.seed(123)</code> so the random-number stream matches
+the manuscript, and then cache the DL and AR posterior predictive draws
+at the end, just before the in-sample comparison in Section 5. Every
+chunk that needs the MCMC fit is gated with <code>eval = FALSE</code>,
+so with MCMC off only the HVA half of each step runs.</p>
+<p>The static parameters of the two engines are compared with
+<code>dgtf_compare_params()</code>, which without a <code>truth</code>
+argument returns the posterior mean, median, standard deviation, and 95%
+credible interval for each parameter under each method.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">dgtf_compare_params</span>(<span class="fu">list</span>(<span class="at">HVA =</span> fit_DH, <span class="at">MCMC =</span> fit_DH_mcmc))</span></code></pre></div>
+<p>The seasonal and <span class="math inline">\(R_t\)</span> posteriors
+are overlaid with <code>dgtf_compare_plot()</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">HVA =</span> fit_DH, <span class="at">MCMC =</span> fit_DH_mcmc),</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">what =</span> <span class="st">&quot;seas&quot;</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>)</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">HVA =</span> fit_DH, <span class="at">MCMC =</span> fit_DH_mcmc),</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="at">what =</span> <span class="st">&quot;Rt&quot;</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>)</span></code></pre></div>
+<p>The table combining the in-sample posterior predictive scores with
+the 14-day forecast scores is produced by the block below, under one
+<code>set.seed(123)</code>: cache the discretized Hawkes draws, score
+the fitted objects with <code>dgtf_compare()</code>, then build the
+forecasts and score them. The MCMC pieces are gated, so the evaluated
+stream is <code>set.seed(123)</code> → PPC → forecast.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="fu">attr</span>(fit_DH, <span class="st">&quot;ppc&quot;</span>) <span class="ot">&lt;-</span> <span class="fu">posterior_predict</span>(fit_DH)</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">attr</span>(fit_DH_mcmc, <span class="st">&quot;ppc&quot;</span>) <span class="ot">&lt;-</span> <span class="fu">posterior_predict</span>(fit_DH_mcmc)</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="fu">dgtf_compare</span>(<span class="fu">list</span>(<span class="at">HVA =</span> fit_DH, <span class="at">MCMC =</span> fit_DH_mcmc))</span></code></pre></div>
+<p>Note: <code>log_marglik</code> is the HVA SMC tail estimate of log
+p(y | gamma_final); MCMC fits have no equivalent stored and show NA.
+Pointwise log-likelihood is not currently exposed by either inference
+method.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>fc_DH <span class="ot">&lt;-</span> <span class="fu">dgtf_forecast_fit</span>(fit_DH, <span class="at">h =</span> <span class="dv">14</span>, <span class="at">ypred_true =</span> ytest)</span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>fc_DH_mcmc <span class="ot">&lt;-</span> <span class="fu">dgtf_forecast_fit</span>(fit_DH_mcmc, <span class="at">h =</span> <span class="dv">14</span>, <span class="at">ypred_true =</span> ytest)</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="fu">summary</span>(fc_DH_mcmc)</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a><span class="fu">plot_dgtf_y</span>(fit_DH_mcmc, fc_DH_mcmc)</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="fu">dgtf_compare</span>(<span class="fu">list</span>(<span class="at">HVA =</span> fc_DH, <span class="at">MCMC =</span> fc_DH_mcmc))</span></code></pre></div>
+<p>The discretized Hawkes in-sample predictive band is shown below; the
+MCMC counterpart is gated off.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="fu">plot</span>(fit_DH, <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="fu">summary</span>(<span class="fu">attr</span>(fit_DH, <span class="st">&quot;ppc&quot;</span>))</span></code></pre></div>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">plot</span>(fit_DH_mcmc, <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span>)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="fu">summary</span>(<span class="fu">attr</span>(fit_DH_mcmc, <span class="st">&quot;ppc&quot;</span>))</span></code></pre></div>
+<p>The distributed lag and AR posterior predictive draws are cached the
+same way, just before the in-sample comparison.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a><span class="fu">attr</span>(fit_DL, <span class="st">&quot;ppc&quot;</span>) <span class="ot">&lt;-</span> <span class="fu">posterior_predict</span>(fit_DL, <span class="at">nrep =</span> <span class="dv">100</span>)</span>
+<span id="cb17-3"><a href="#cb17-3" tabindex="-1"></a><span class="fu">attr</span>(fit_AR, <span class="st">&quot;ppc&quot;</span>) <span class="ot">&lt;-</span> <span class="fu">posterior_predict</span>(fit_AR, <span class="at">nrep =</span> <span class="dv">100</span>)</span>
+<span id="cb17-4"><a href="#cb17-4" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" tabindex="-1"></a><span class="fu">plot</span>(fit_DL, <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span>)</span>
+<span id="cb17-6"><a href="#cb17-6" tabindex="-1"></a><span class="fu">summary</span>(<span class="fu">attr</span>(fit_DL, <span class="st">&quot;ppc&quot;</span>))</span>
+<span id="cb17-7"><a href="#cb17-7" tabindex="-1"></a></span>
+<span id="cb17-8"><a href="#cb17-8" tabindex="-1"></a><span class="fu">plot</span>(fit_AR, <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span>)</span>
+<span id="cb17-9"><a href="#cb17-9" tabindex="-1"></a><span class="fu">summary</span>(<span class="fu">attr</span>(fit_AR, <span class="st">&quot;ppc&quot;</span>))</span></code></pre></div>
+</div>
+<div id="in-sample-comparison" class="section level1">
+<h1>5. In-sample comparison</h1>
+<p><code>dgtf_compare()</code> reuses the cached posterior predictive
+objects and reports the in-sample predictive scores across the three
+models.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="fu">dgtf_compare</span>(</span>
+<span id="cb18-2"><a href="#cb18-2" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb18-3"><a href="#cb18-3" tabindex="-1"></a>    <span class="at">DH =</span> fit_DH,</span>
+<span id="cb18-4"><a href="#cb18-4" tabindex="-1"></a>    <span class="at">DL =</span> fit_DL,</span>
+<span id="cb18-5"><a href="#cb18-5" tabindex="-1"></a>    <span class="at">AR =</span> fit_AR</span>
+<span id="cb18-6"><a href="#cb18-6" tabindex="-1"></a>  )</span>
+<span id="cb18-7"><a href="#cb18-7" tabindex="-1"></a>)</span></code></pre></div>
+<div id="epiestim-baseline" class="section level2">
+<h2>EpiEstim baseline</h2>
+<p>The <code>epiestim_baseline()</code> wrapper runs
+<code>EpiEstim::estimate_R()</code> with a sliding window and returns
+the <span class="math inline">\(R_t\)</span> posterior bands in a format
+that <code>dgtf_compare_plot()</code> consumes. The EpiEstim renewal
+equation estimator does not accommodate weekly seasonality, so for a
+fair comparison against the DGTF fits we first apply a multiplicative
+deseasoning to the training counts. The <code>deseason_counts()</code>
+helper computes daily seasonal scales from the empirical standard
+deviations and divides the original series. Section 6.4 of the paper
+discusses why this protocol is needed.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" tabindex="-1"></a>deseason_counts <span class="ot">&lt;-</span> <span class="cf">function</span>(y, <span class="at">period =</span> <span class="dv">7</span><span class="dt">L</span>, <span class="at">start_day =</span> <span class="dv">1</span><span class="dt">L</span>) {</span>
+<span id="cb19-2"><a href="#cb19-2" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(y)</span>
+<span id="cb19-3"><a href="#cb19-3" tabindex="-1"></a>  day_idx <span class="ot">&lt;-</span> ((start_day <span class="sc">-</span> <span class="dv">1</span><span class="dt">L</span> <span class="sc">+</span> <span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="dv">1</span><span class="dt">L</span>) <span class="sc">%%</span> period) <span class="sc">+</span> <span class="dv">1</span><span class="dt">L</span></span>
+<span id="cb19-4"><a href="#cb19-4" tabindex="-1"></a>  sds <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_len</span>(period), <span class="cf">function</span>(d) {</span>
+<span id="cb19-5"><a href="#cb19-5" tabindex="-1"></a>    <span class="fu">sd</span>(y[day_idx <span class="sc">==</span> d], <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb19-6"><a href="#cb19-6" tabindex="-1"></a>  }, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb19-7"><a href="#cb19-7" tabindex="-1"></a>  sds <span class="ot">&lt;-</span> sds <span class="sc">/</span> <span class="fu">sum</span>(sds) <span class="sc">*</span> period</span>
+<span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a>  <span class="fu">round</span>(y <span class="sc">/</span> sds[day_idx])</span>
+<span id="cb19-9"><a href="#cb19-9" tabindex="-1"></a>}</span>
+<span id="cb19-10"><a href="#cb19-10" tabindex="-1"></a></span>
+<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a>y_adj <span class="ot">&lt;-</span> <span class="fu">deseason_counts</span>(ytrain, <span class="at">period =</span> <span class="dv">7</span><span class="dt">L</span>)</span>
+<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a></span>
+<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a>epi <span class="ot">&lt;-</span> <span class="fu">epiestim_baseline</span>(</span>
+<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a>  <span class="at">y       =</span> y_adj,</span>
+<span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a>  <span class="at">mean_si =</span> <span class="fl">4.7</span>,</span>
+<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a>  <span class="at">sd_si   =</span> <span class="fl">2.9</span>,</span>
+<span id="cb19-17"><a href="#cb19-17" tabindex="-1"></a>  <span class="at">method  =</span> <span class="st">&quot;parametric_si&quot;</span>,</span>
+<span id="cb19-18"><a href="#cb19-18" tabindex="-1"></a>  <span class="at">window  =</span> <span class="dv">7</span></span>
+<span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a>)</span>
+<span id="cb19-20"><a href="#cb19-20" tabindex="-1"></a>epi</span></code></pre></div>
+<p>We overlay the fits. For <span class="math inline">\(R_t\)</span> the
+AR fit is replaced by EpiEstim, because the AR model does not admit a
+reproduction number interpretation; for counts
+(<code>what = &quot;yhat&quot;</code>) and the seasonal estimates
+(<code>what = &quot;seas&quot;</code>) all three DGTF fits appear.</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(</span>
+<span id="cb20-2"><a href="#cb20-2" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb20-3"><a href="#cb20-3" tabindex="-1"></a>    <span class="at">DH =</span> fit_DH,</span>
+<span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a>    <span class="at">DL =</span> fit_DL,</span>
+<span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a>    <span class="at">EpiEstim =</span> epi</span>
+<span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a>  ),</span>
+<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a>  <span class="at">what =</span> <span class="st">&quot;Rt&quot;</span></span>
+<span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a>)</span>
+<span id="cb20-9"><a href="#cb20-9" tabindex="-1"></a></span>
+<span id="cb20-10"><a href="#cb20-10" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(</span>
+<span id="cb20-11"><a href="#cb20-11" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb20-12"><a href="#cb20-12" tabindex="-1"></a>    <span class="at">DH =</span> fit_DH,</span>
+<span id="cb20-13"><a href="#cb20-13" tabindex="-1"></a>    <span class="at">DL =</span> fit_DL,</span>
+<span id="cb20-14"><a href="#cb20-14" tabindex="-1"></a>    <span class="at">AR =</span> fit_AR</span>
+<span id="cb20-15"><a href="#cb20-15" tabindex="-1"></a>  ),</span>
+<span id="cb20-16"><a href="#cb20-16" tabindex="-1"></a>  <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span></span>
+<span id="cb20-17"><a href="#cb20-17" tabindex="-1"></a>)</span>
+<span id="cb20-18"><a href="#cb20-18" tabindex="-1"></a></span>
+<span id="cb20-19"><a href="#cb20-19" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(</span>
+<span id="cb20-20"><a href="#cb20-20" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb20-21"><a href="#cb20-21" tabindex="-1"></a>    <span class="at">DH =</span> fit_DH,</span>
+<span id="cb20-22"><a href="#cb20-22" tabindex="-1"></a>    <span class="at">DL =</span> fit_DL,</span>
+<span id="cb20-23"><a href="#cb20-23" tabindex="-1"></a>    <span class="at">AR =</span> fit_AR</span>
+<span id="cb20-24"><a href="#cb20-24" tabindex="-1"></a>  ),</span>
+<span id="cb20-25"><a href="#cb20-25" tabindex="-1"></a>  <span class="at">what =</span> <span class="st">&quot;seas&quot;</span></span>
+<span id="cb20-26"><a href="#cb20-26" tabindex="-1"></a>)</span></code></pre></div>
+<p><code>plot_dgtf_lag()</code> produces a grouped bar chart of the
+discretized lag distributions for the two Hawkes-style fits. The AR fit
+is excluded because its lag weights are time-varying coefficients rather
+than a probability distribution.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" tabindex="-1"></a><span class="fu">plot_dgtf_lag</span>(<span class="fu">list</span>(</span>
+<span id="cb21-2"><a href="#cb21-2" tabindex="-1"></a>  <span class="at">DH =</span> fit_DH,</span>
+<span id="cb21-3"><a href="#cb21-3" tabindex="-1"></a>  <span class="at">DL =</span> fit_DL</span>
+<span id="cb21-4"><a href="#cb21-4" tabindex="-1"></a>), <span class="at">xlim =</span> <span class="dv">14</span>)</span></code></pre></div>
+</div>
+</div>
+<div id="out-of-sample-forecasting" class="section level1">
+<h1>6. Out-of-sample forecasting</h1>
+<p>Each fit is taken forward 14 days against the held-out test window.
+The discretized Hawkes forecast <code>fc_DH</code> was already built in
+Section 4; here we add the distributed lag and AR forecasts. The
+forecast objects share the same comparison and plotting interface as the
+fit objects.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a>fc_DL <span class="ot">&lt;-</span> <span class="fu">dgtf_forecast_fit</span>(fit_DL, <span class="at">h =</span> <span class="dv">14</span>, <span class="at">ypred_true =</span> ytest)</span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a>fc_AR <span class="ot">&lt;-</span> <span class="fu">dgtf_forecast_fit</span>(fit_AR, <span class="at">h =</span> <span class="dv">14</span>, <span class="at">ypred_true =</span> ytest)</span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="fu">dgtf_compare</span>(</span>
+<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>    <span class="at">DH =</span> fc_DH,</span>
+<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>    <span class="at">DL =</span> fc_DL,</span>
+<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>    <span class="at">AR =</span> fc_AR</span>
+<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a>  )</span>
+<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>)</span></code></pre></div>
+<p><code>plot_dgtf_y()</code> overlays the in-sample posterior
+predictive band with the out-of-sample forecast band on a single time
+axis for one model, and <code>plot_dgtf_y_compare()</code> puts all
+three on one panel, one colour per method.</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a>fc_DH</span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a><span class="fu">summary</span>(fc_DH)</span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a><span class="fu">plot_dgtf_y</span>(fit_DH, fc_DH)</span></code></pre></div>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a>fc_DL</span>
+<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a><span class="fu">summary</span>(fc_DL)</span>
+<span id="cb25-3"><a href="#cb25-3" tabindex="-1"></a><span class="fu">plot_dgtf_y</span>(fit_DL, fc_DL)</span></code></pre></div>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" tabindex="-1"></a>fc_AR</span>
+<span id="cb26-2"><a href="#cb26-2" tabindex="-1"></a><span class="fu">summary</span>(fc_AR)</span>
+<span id="cb26-3"><a href="#cb26-3" tabindex="-1"></a><span class="fu">plot_dgtf_y</span>(fit_AR, fc_AR)</span></code></pre></div>
+<div class="sourceCode" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" tabindex="-1"></a><span class="fu">dgtf_compare_plot</span>(<span class="fu">list</span>(</span>
+<span id="cb27-2"><a href="#cb27-2" tabindex="-1"></a>  <span class="at">DH =</span> fc_DH,</span>
+<span id="cb27-3"><a href="#cb27-3" tabindex="-1"></a>  <span class="at">DL =</span> fc_DL,</span>
+<span id="cb27-4"><a href="#cb27-4" tabindex="-1"></a>  <span class="at">AR =</span> fc_AR</span>
+<span id="cb27-5"><a href="#cb27-5" tabindex="-1"></a>), <span class="at">what =</span> <span class="st">&quot;yhat&quot;</span>)</span>
+<span id="cb27-6"><a href="#cb27-6" tabindex="-1"></a></span>
+<span id="cb27-7"><a href="#cb27-7" tabindex="-1"></a>fits_list <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb27-8"><a href="#cb27-8" tabindex="-1"></a>  <span class="at">DH =</span> fit_DH,</span>
+<span id="cb27-9"><a href="#cb27-9" tabindex="-1"></a>  <span class="at">DL =</span> fit_DL,</span>
+<span id="cb27-10"><a href="#cb27-10" tabindex="-1"></a>  <span class="at">AR =</span> fit_AR</span>
+<span id="cb27-11"><a href="#cb27-11" tabindex="-1"></a>)</span>
+<span id="cb27-12"><a href="#cb27-12" tabindex="-1"></a></span>
+<span id="cb27-13"><a href="#cb27-13" tabindex="-1"></a>fcs_list <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb27-14"><a href="#cb27-14" tabindex="-1"></a>  <span class="at">DH =</span> fc_DH,</span>
+<span id="cb27-15"><a href="#cb27-15" tabindex="-1"></a>  <span class="at">DL =</span> fc_DL,</span>
+<span id="cb27-16"><a href="#cb27-16" tabindex="-1"></a>  <span class="at">AR =</span> fc_AR</span>
+<span id="cb27-17"><a href="#cb27-17" tabindex="-1"></a>)</span>
+<span id="cb27-18"><a href="#cb27-18" tabindex="-1"></a></span>
+<span id="cb27-19"><a href="#cb27-19" tabindex="-1"></a><span class="fu">plot_dgtf_y_compare</span>(fits_list, fcs_list)</span></code></pre></div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

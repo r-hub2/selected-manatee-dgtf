@@ -1,0 +1,37 @@
+Package: dgtf
+Type: Package
+Title: Variational and Monte Carlo Inference for Bayesian State-Space
+        Models of Count Data
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Meini", family = "Tang", role = c("aut", "cre"),
+           email = "mtang41@ucsc.edu",
+           comment = c(ORCID = "0000-0001-5338-8772")),
+    person(given = "Raquel", family = "Prado", role = "aut",
+           email = "rprado@ucsc.edu",
+           comment = c(ORCID = "0000-0001-6709-7191"))
+    )
+Description: Bayesian inference for a general class of state-space models
+    for count data, providing a unified interface for variational Bayes and MCMC. 
+    Supports univariate observation and state processes, with negative binomial, 
+    Poisson, and lognormal families and flexible trend, seasonal, and regression components.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+SystemRequirements: C++17
+Depends: R (>= 4.1.0)
+Imports: Rcpp (>= 1.0.10), stats, utils, graphics, grDevices, ggplot2
+        (>= 3.3.0)
+LinkingTo: Rcpp, RcppArmadillo, BH, RcppProgress, pg
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown, EpiEstim, posterior
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 8.0.0
+URL: https://github.com/minimeini/dgtf
+BugReports: https://github.com/minimeini/dgtf/issues
+VignetteBuilder: knitr
+NeedsCompilation: yes
+Packaged: 2026-07-28 21:25:51 UTC; raquel
+Author: Meini Tang [aut, cre] (ORCID: <https://orcid.org/0000-0001-5338-8772>),
+  Raquel Prado [aut] (ORCID: <https://orcid.org/0000-0001-6709-7191>)
+Maintainer: Meini Tang <mtang41@ucsc.edu>

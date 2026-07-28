@@ -1,0 +1,473 @@
+---
+title: "Getting started with dgtf"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with dgtf}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>", fig.width = 6,
+  fig.height = 4
+)
+dgtf_run_long <- identical(Sys.getenv("DGTF_RUN_EXPENSIVE_VIGNETTES"), "true")
+```
+
+```{r compile-install-package, eval = FALSE}
+# # Compile and install this package locally
+# Rcpp::compileAttributes()
+# devtools::document()
+# devtools::install()
+```
+
+```{r setup}
+library(dgtf)
+library(ggplot2)
+```
+
+This vignette walks through the core workflow of the **dgtf** package on a single simulated example. We build a model, simulate data from it, fit it with the hybrid variational algorithm, inspect the result, produce a forecast, and finally compare several canonical model structures on the same series. Each section corresponds to a section of the package paper, and pointers to the paper are included where the discussion there goes deeper.
+
+# 1. The DGTF model class
+
+A **dynamic generalised transfer function (DGTF)** model has three pieces:
+
+- an *observation* distribution (Poisson, negative-binomial, ...),
+- a *link* function and *transfer / lag* structure that connects past
+  observations and the latent state to the current intensity, and
+- a *system* equation governing how the latent state evolves.
+
+In `dgtf` each piece is its own component object, so you build a model by snapping the parts together. The call below assembles a discretized Hawkes model with a negative binomial observation, a softplus gain, a lognormal lag distribution, and a single-period seasonal intercept:
+
+```{r build-model}
+mod <- dgtf_model(
+  obs         = obs_nbinom(),
+  link        = link_identity(),
+  sys         = sys_shift(),
+  gain        = gain_softplus(),
+  lag         = lag_lognormal(meanlog = 1.35, sigma2 = 0.32),
+  err         = err_gaussian(W = 0.01),
+  seasonality = seas_period(1, init = 2)
+)
+mod
+```
+
+Printing the model object surfaces the components and their fixed parameter values. Nothing has been inferred yet. Most components also accept a string shortcut, so the call above is equivalent to `dgtf_model(obs = "nbinom", link = "identity", sys = "shift", gain = "softplus", lag = lag_lognormal(...), ...)`.
+
+For the canonical model families discussed in Section 3.1 of the paper, shortcut constructors are also available, for example `dgtf_hawkes()`, `dgtf_distributed_lag()`, `dgtf_koyck()`, `dgtf_nb_ar()`, and `dgtf_poisson_ar()`. Section 6 of this vignette uses several of those.
+
+# 2. Simulate
+
+`dgtf_simulate_model()` draws a count series from the model object, along with the latent state $\psi_t$, the $R_t$ trajectory, and the intensity $\lambda_t$ at each step. We split the simulated series into a 200-step training window and a 10-step held-out test window so that the same draw can be reused for both inference and a forecast check below.
+
+```{r simulate}
+sim <- dgtf_simulate_model(mod, ntime = 210, seed = 3269)
+ytrain <- c(sim$y)[1:200]
+ytest <- c(sim$y)[201:210]
+Rt_train <- log1p(exp(c(sim$psi)))[1:200]
+Rt_test <- log1p(exp(c(sim$psi)))[201:210]
+
+print(sim)
+plot(sim, what = "y", split = 200)
+plot(sim, what = "Rt", split = 200)
+```
+
+The `plot()` method on a `dgtf_sim` object draws either the simulated counts (`what = "y"`) or the $R_t$ trajectory (`what = "Rt"`). The optional `split = 200` argument overlays a vertical dotted line at the train/test boundary, which is useful for distinguishing the two segments visually.
+
+# 3. Inference
+
+## 3.1 Prior specification
+
+Inference in **dgtf** follows a single rule: anything that has a prior in the `dgtf_prior` object is treated as unknown and inferred. Anything left out is held fixed at the value supplied to `dgtf_model()`. The prior below treats the seasonal intercept, the innovation variance $W$, the overdispersion parameter $\rho$, and the two lognormal lag parameters as unknown.
+
+```{r prior}
+prior <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1),
+  lag         = list(par1 = normal(0, 1), par2 = inv_gamma(1, 1))
+)
+```
+
+See Section 3.2 of the paper for the full list of supported prior families and their parameterizations.
+
+## 3.2 Fitting the model
+
+```{r expensive-vignette-gate, include = FALSE}
+knitr::opts_chunk$set(eval = dgtf_run_long, purl = dgtf_run_long)
+```
+
+The remaining chunks run HVA fits and downstream posterior checks. They are not
+evaluated or tangled during package checks by default. To execute the full
+workflow while rebuilding the vignette, set
+`DGTF_RUN_EXPENSIVE_VIGNETTES=true` in the R environment.
+
+The `model` argument to `dgtf()` plays two roles. It specifies the structure of the DGTF model being fitted, and the parameter values it carries are used as starting points for any parameters the prior treats as unknown (and as fixed values for any parameters left out of the prior). To exercise the inference at points away from the
+data-generating truth, we construct a separate `m0_init` object whose structure matches `mod` but whose starting values are drawn at random. The seed is fixed before the random draw so that the example is reproducible.
+
+```{r infer, eval = FALSE}
+set.seed(123)
+m0_init <- dgtf_hawkes(
+  meanlog     = runif(1, 1, 2),
+  sigma2      = runif(1, 0.1, 0.5),
+  W           = 1 / rgamma(1, 10, 1),
+  seasonality = seas_period(1, init = runif(1, 1, 10))
+)
+
+fit <- dgtf(
+  y       = ytrain,
+  model   = m0_init,
+  prior   = prior,
+  method  = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+summary(fit)
+```
+
+`summary(fit)` reports the elapsed runtime split into optimization and sampling phases, posterior summaries for each inferred parameter, the median band of the latent state $\psi_t$, and, for HVA, a convergence diagnostic computed from the SMC log marginal likelihood trace across iterations. The MAD ratio between the late and early windows quantifies how much the trace has stabilized. Values well below one indicate that the variational parameters have settled.
+
+## 3.3 Recovery check
+
+When the ground truth is known, as in this simulated example, `param_recovery()` augments the posterior summary with the truth, the bias, mean absolute error, continuous ranked probability score, and an indicator for whether the credible interval covers the truth.
+
+```{r recovery, eval = FALSE}
+truth_list <- list(W = 0.01, seas = 2, rho = 30, par1 = 1.35, par2 = 0.32)
+param_recovery(fit, truth_list)
+```
+
+# 4. Inspecting the fit
+
+The `plot()` method on a `dgtf_fit` dispatches on the `what` argument to render one of the time-series targets ($R_t$, $\psi$, $\hat y$), the HVA convergence trace, or a posterior summary of any inferred static parameter. A `truth` argument overlays the simulated truth where applicable.
+
+## 4.1 Posterior plots
+
+```{r inspect-plots, eval = FALSE}
+plot(fit, what = "marglik")
+plot(fit, what = "Rt", truth = Rt_train)
+plot(fit, what = "W")
+```
+
+`plot(fit, what = "marglik")` shows the SMC log marginal likelihood trace recorded across optimization iterations, with the rolling median smoother and the auto-detected stabilization iteration. It is specific to HVA fits. `plot(fit, what = "Rt", truth = Rt_train)` draws the posterior median band of $R_t = h(\psi_t)$ with the simulated truth overlaid. `plot(fit, what = "W")` is a histogram of the posterior draws of the innovation variance.
+
+## 4.2 Posterior predictive check
+
+A posterior predictive check evaluates the fit by comparing the predictive distribution to the observed data. `posterior_predict()` returns a `dgtf_ppc` object that can be cached on the fit and queried through `summary()`. When a `Rt` argument is supplied the result also includes scoring metrics for the recovered $R_t$ trajectory.
+
+```{r ppc-hva, eval = FALSE, fig.alt = "Posterior intensity vs simulated series"}
+attr(fit, "ppc") <- posterior_predict(fit, nrep = 100, Rt = Rt_train)
+plot(fit, what = "yhat", truth = ytrain)
+summary(attr(fit, "ppc"))
+```
+
+## 4.3 Forecasting
+
+Out-of-sample forecasts are produced by `dgtf_forecast_fit(fit, h)`, or equivalently by `predict(fit, horizon = h)`. The result is a `dgtf_forecast` object that plots and summarises through the same interface as the in-sample objects.
+
+```{r forecast, eval = FALSE}
+fc <- dgtf_forecast_fit(fit, h = 10, ypred_true = ytest)
+plot_dgtf_y(fit, fc)
+plot(fc)
+summary(fc)
+```
+
+`plot_dgtf_y(fit, fc)` is a combined view of the in-sample posterior predictive band and the out-of-sample forecast band on a single time axis, with the train/test boundary marked.
+
+# 5. Switching the inference method
+
+The `model` and `prior` objects are reusable across methods. Only the control changes. The MCMC sampler targets the exact posterior and is the reference method when calibrated uncertainty is the priority, but it is substantially slower than HVA. The chunks below are gated with `eval = FALSE` so that the vignette builds without running the sampler. Users who want the MCMC output can flip `eval = TRUE` on each chunk, or call them interactively after the vignette finishes.
+
+A practical workflow is to screen candidate model structures with HVA and refit the chosen model with MCMC for final reporting. The manuscript demonstrates that workflow in both the simulation study (Section 5) and the COVID application (Section 6).
+
+```{r switch-method, eval = FALSE}
+set.seed(123)
+
+fit_mcmc <- dgtf(
+  y       = ytrain,
+  model   = m0_init,
+  prior   = prior,
+  method  = "mcmc",
+  control = mcmc_control(iter = 5000, warmup = 2000, thin = 5)
+) # takes 45 ~ 50 mins
+
+summary(fit_mcmc)
+```
+
+MCMC fits expose a few additional diagnostics. `summary(fit_mcmc)` reports the effective sample size and split-$\hat R$ for each parameter, the HMC acceptance rate and step size, and Metropolis-Hastings acceptance summaries for the latent state update. Trace plots are available through `plot(fit, what = "<param>", type = "trace")`.
+
+```{r mcmc-diagnostics, eval = FALSE}
+plot(fit_mcmc, what = "Rt", truth = Rt_train)
+
+plot(fit_mcmc, what = "W", truth = 0.01, type = "trace")
+plot(fit_mcmc, what = "W", truth = 0.01, type = "hist")
+
+plot(fit_mcmc, what = "seas", truth = c(1, 2), type = "trace")
+
+plot(fit_mcmc, what = "par1", truth = 1.386262, type = "trace")
+plot(fit_mcmc, what = "par2", truth = 0.3226017, type = "hist")
+```
+
+A posterior predictive check and a forecast can be produced through the same interface used for the HVA fit:
+
+```{r ppc-mcmc, eval = FALSE, fig.alt = "Posterior intensity vs simulated series"}
+attr(fit_mcmc, "ppc") <- posterior_predict(fit_mcmc, nrep = 100, Rt = Rt_train)
+plot(fit_mcmc, what = "yhat", truth = ytrain)
+summary(attr(fit_mcmc, "ppc"))
+```
+
+```{r mcmc-forecast, eval = FALSE}
+fc_mcmc <- dgtf_forecast_fit(fit_mcmc, h = 10, ypred_true = ytest)
+print(fc_mcmc)
+```
+
+`dgtf_compare_plot()` overlays multiple fits on a single panel. With HVA and MCMC fits in hand we can compare them on any target the two methods share, including the in-sample fit, $R_t$, and the static parameters:
+
+```{r hva-mcmc-overlays, eval = FALSE}
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc),
+  what = "yhat"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = Rt_train),
+  what = "Rt"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = 2),
+  what = "seas"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = 0.01),
+  what = "W"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = 1.35),
+  what = "par1"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = 0.32),
+  what = "par2"
+)
+
+dgtf_compare_plot(
+  list(HVA = fit, MCMC = fit_mcmc, True = 30),
+  what = "rho"
+)
+```
+
+For tabular reporting, `dgtf_compare()` returns predictive scores (CRPS, chi-square, coverage, interval score) across fits, optionally with an $R_t$ truth for additional recovery columns. `dgtf_compare_params()` returns the parameter recovery summary stacked across fits:
+
+```{r hva-mcmc-compare, eval = FALSE}
+truth_list <- list(
+  W    = sim$model$err$params$var,
+  seas = sim$model$seasonality$init,
+  rho  = sim$model$obs_init[2],
+  par1 = sim$model$lag$params$par1,
+  par2 = sim$model$lag$params$par2
+)
+
+dgtf_compare(list(HVA = fit, MCMC = fit_mcmc), truth = truth_list)
+```
+
+```{r hva-mcmc-params, eval = FALSE}
+dgtf_compare_params(list(HVA = fit, MCMC = fit_mcmc), truth = truth_list)
+```
+
+Forecast objects use the same comparison interface:
+
+```{r hva-mcmc-fc-compare, eval = FALSE}
+dgtf_compare(list(HVA = fc, MCMC = fc_mcmc))
+```
+
+# 6. Model comparison
+
+The canonical model families covered in Section 3.1 of the paper all share the same `dgtf()` interface, so screening several structures on the same data is a matter of constructing different model objects and fitting each. The five models below correspond to the simulation study in Section 5 of the paper, labelled M0 through M4:
+
+- **M0**: discretized Hawkes with full inference (the `fit` from Section 3 above).
+- **M1**: same Hawkes structure with the discount-factor variant (innovation variance updated adaptively from a discount factor rather than treated as a static parameter).
+- **M2**: distributed lag model with negative binomial lag weights.
+- **M3**: negative binomial autoregression of order 3.
+- **M4**: Poisson autoregression of order 5.
+
+## 6.1 Build and fit the alternative models
+
+```{r canonical, eval = FALSE}
+set.seed(123)
+
+m1_fit <- dgtf(
+  y     = ytrain,
+  model = mod,
+  prior = dgtf_prior(
+    seasonality = normal(0, 10),
+    rho         = inv_gamma(1, 1),
+    lag         = list(par1 = normal(0, 1), par2 = inv_gamma(1, 1))
+  ),
+  method  = "hva",
+  control = vb_control(
+    iter            = 1000,
+    n_sample        = 5000,
+    n_particle      = 500,
+    use_discount    = TRUE,
+    discount_factor = 0.92
+  )
+)
+attr(m1_fit, "ppc") <- posterior_predict(m1_fit, nrep = 100, Rt = Rt_train)
+plot(m1_fit, what = "Rt", truth = Rt_train)
+m1_fc <- dgtf_forecast_fit(m1_fit, h = 10, ypred_true = ytest)
+
+
+m2_prior <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1),
+  lag         = list(par1 = dist_beta(1, 1))
+)
+m2_init <- dgtf_distributed_lag(
+  r           = 4,
+  kappa       = 0.395,
+  seasonality = seas_period(1, init = runif(1, 0, 10))
+)
+m2_fit <- dgtf(
+  y       = ytrain,
+  model   = m2_init,
+  prior   = m2_prior,
+  method  = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+attr(m2_fit, "ppc") <- posterior_predict(m2_fit, nrep = 100, Rt = Rt_train)
+m2_fc <- dgtf_forecast_fit(m2_fit, h = 10, ypred_true = ytest)
+
+
+set.seed(123)
+m3_prior <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1),
+  rho         = inv_gamma(1, 1)
+)
+m3_init <- dgtf_nb_ar(
+  p           = 3,
+  W           = 1 / rgamma(1, 10, 1),
+  seasonality = seas_period(1, init = runif(1, 0, 10))
+)
+m3_fit <- dgtf(
+  y       = ytrain,
+  model   = m3_init,
+  prior   = m3_prior,
+  method  = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+attr(m3_fit, "ppc") <- posterior_predict(m3_fit, nrep = 100, Rt = Rt_train)
+m3_fc <- dgtf_forecast_fit(m3_fit, h = 10, ypred_true = ytest)
+
+
+set.seed(123)
+m4_prior <- dgtf_prior(
+  seasonality = normal(0, 10),
+  W           = inv_gamma(1, 1)
+)
+m4_init <- dgtf_poisson_ar(
+  p           = 5,
+  W           = 0.001,
+  seasonality = seas_period(1, init = runif(1, 0, 10))
+)
+m4_fit <- dgtf(
+  y       = ytrain,
+  model   = m4_init,
+  prior   = m4_prior,
+  method  = "hva",
+  control = vb_control(iter = 1000, n_sample = 5000, n_particle = 500)
+)
+attr(m4_fit, "ppc") <- posterior_predict(m4_fit, nrep = 100, Rt = Rt_train)
+```
+
+## 6.2 Visual comparison
+
+`plot_dgtf_y()` plots one fit's in-sample and forecast bands on a single panel. `dgtf_compare_plot()` overlays multiple fits on a target selected by `what`. The same interface accepts a numeric truth vector, so the simulated $R_t$ trajectory can be added as a reference line.
+
+```{r compare-plots, eval = FALSE}
+plot_dgtf_y(fit, fc)
+plot_dgtf_y(m1_fit, m1_fc)
+
+dgtf_compare_plot(
+  list(M0 = fit, M1 = m1_fit, M2 = m2_fit, M3 = m3_fit, M4 = m4_fit,
+       True = ytrain),
+  what = "yhat"
+)
+
+dgtf_compare_plot(
+  list(M0 = fit, M1 = m1_fit, M2 = m2_fit, True = Rt_train),
+  what = "Rt"
+)
+```
+
+## 6.3 Tabular comparison
+
+`dgtf_compare()` reports predictive scores across fits. With an `Rt_truth` argument it also reports MAE, RMSE, coverage, and interval score for the recovered $R_t$ trajectory. `dgtf_compare_params()` stacks the parameter summaries from each fit into a long-form table, with bias, CRPS, and coverage columns when a `truth` argument is supplied.
+
+```{r compare-scores, eval = FALSE}
+dgtf_compare(list(M0 = fit, M1 = m1_fit, M2 = m2_fit, M3 = m3_fit, M4 = m4_fit),
+             Rt_truth = Rt_train)
+```
+
+```{r compare-params, eval = FALSE}
+dgtf_compare_params(list(M0 = fit, M1 = m1_fit, M2 = m2_fit, M3 = m3_fit, M4 = m4_fit))
+```
+
+The forecast objects support the same comparison:
+
+```{r compare-fc, eval = FALSE}
+dgtf_compare(list(M0 = fc, M1 = m1_fc, M2 = m2_fc, M3 = m3_fc))
+```
+
+```{r compare-fc-plot, eval = FALSE}
+dgtf_compare_plot(
+  list(M0 = fc, M1 = m1_fc, M2 = m2_fc, M3 = m3_fc, True = ytest),
+  what = "yhat",
+  time = length(ytrain) + seq_len(fc$horizon)
+)
+
+fits_list <- list(M0 = fit, M1 = m1_fit, M2 = m2_fit, M3 = m3_fit)
+fcs_list  <- list(M0 = fc,  M1 = m1_fc,  M2 = m2_fc,  M3 = m3_fc)
+
+plot_dgtf_y_compare(fits_list, fcs_list)
+```
+
+`plot_dgtf_lag()` produces a grouped bar chart of the per-lag weights across fits, allowing direct comparison of lag distributions across model structures:
+
+```{r compare-lag, eval = FALSE}
+plot_dgtf_lag(list(M0 = fit, M1 = m1_fit, M2 = m2_fit), xlim = 21)
+```
+
+# 7. EpiEstim baseline
+
+For comparison with a non-state-space estimator, the package wraps [`EpiEstim::estimate_R()`][EpiEstim] through `epiestim_baseline()`, which runs the sliding-window estimator and returns the $R_t$ posterior bands in a format that `dgtf_compare_plot()` consumes directly. `EpiEstim` is in `Suggests`, so this section is conditional on the package being installed.
+
+[EpiEstim]: https://cran.r-project.org/package=EpiEstim
+
+```{r epiestim, eval = FALSE}
+# Serial interval mean / sd implied by the simulator's lognormal kernel
+# `dgtf_hawkes(meanlog = 1.386, sigma2 = 0.323)`:
+#   mean = exp(meanlog + sigma2 / 2)      ~= 4.7
+#   sd   = mean * sqrt(exp(sigma2) - 1)   ~= 2.9
+epi_baseline <- epiestim_baseline(
+  y       = ytrain,
+  mean_si = 4.7,
+  sd_si   = 2.9,
+  method  = "parametric_si",
+  window  = 7
+)
+epi_baseline
+```
+
+The wrapper output plugs straight into `dgtf_compare_plot()`. Section 3.7 of the paper discusses the relationship between the EpiEstim sliding-window estimator and the DGTF Hawkes model in more detail.
+
+```{r epiestim-compare, eval = FALSE}
+dgtf_compare_plot(
+  list(M0 = fit, EpiEstim = epi_baseline, True = Rt_train),
+  what = "Rt"
+)
+```

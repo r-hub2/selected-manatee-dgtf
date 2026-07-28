@@ -222,7 +222,7 @@ namespace LBA
         }
         case AVAIL::Dist::nbinomm:
         {
-            if (link_list[model.flink] == AVAIL::Func::identity)
+            if (link_list[model.flink] == LinkFunc::Func::identity)
             {
                 beta = regressor * (regressor + model.dobs.par2);
                 beta /= qt;
@@ -294,7 +294,7 @@ namespace LBA
         }
         case AVAIL::Dist::nbinomm:
         {
-            if (link_list[model.flink] == AVAIL::Func::identity)
+            if (link_list[model.flink] == LinkFunc::Func::identity)
             {
                 nbinomm::moments_mean(mean_ft, var_ft, alpha, beta, model.dobs.par2);
             }

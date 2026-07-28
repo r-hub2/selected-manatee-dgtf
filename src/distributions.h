@@ -538,11 +538,11 @@ public:
     double mean2conj()
     {
         _nu = lambda;
+        return _nu;
     }
 
     static double mean2conj(const double &lambda, const double &delta)
     {
-        double nu = lambda;
         return lambda;
     }
 
@@ -715,6 +715,7 @@ public:
     double mean2conj()
     {
         _nu = par1 / (par1 + par2);
+        return _nu;
     }
 
     static double mean2conj(const double &lambda, const double &delta)

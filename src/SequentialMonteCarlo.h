@@ -230,10 +230,9 @@ namespace SMC
             arma::vec cumw = arma::cumsum(weights);
             const double step = wsum / static_cast<double>(N);
 
-            // one uniform in [0, step)
-            thread_local std::mt19937_64 rng{0x9E3779B97F4A7C15ULL};
-            std::uniform_real_distribution<double> unif(0.0, step);
-            double u = unif(rng);
+            // One uniform in [0, step), drawn from R's RNG so set.seed()
+            // controls and resets the complete SMC calculation.
+            const double u = R::runif(0.0, step);
 
             arma::uvec out(N);
             unsigned int i = 0;

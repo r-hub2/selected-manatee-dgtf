@@ -1360,12 +1360,12 @@ public:
         {
             switch (link_list[tolower(link_func)])
             {
-            case AVAIL::Func::identity:
+            case LinkFunc::Func::identity:
             {
                 Vt = lambda;
                 break;
             }
-            case AVAIL::Func::exponential:
+            case LinkFunc::Func::exponential:
             {
                 // Vt = 1 / lambda = exp( - log(lambda) )
                 Vt = -arma::log(arma::abs(lambda) + EPS);
@@ -1453,13 +1453,13 @@ public:
         {
             switch (link_list[tolower(link_func)])
             {
-            case AVAIL::Func::identity:
+            case LinkFunc::Func::identity:
             {
                 Vt = lambda * (lambda + obs_dist.par2);
                 Vt = Vt / obs_dist.par2;
                 break;
             }
-            case AVAIL::Func::exponential:
+            case LinkFunc::Func::exponential:
             {
                 double nom = (lambda + obs_dist.par2);
                 double denom = obs_dist.par2 * lambda;
